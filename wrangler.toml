@@ -1,0 +1,6 @@
+name = "image-background-remover77"
+compatibility_date = "2026-07-19"
+pages_build_output_dir = "out"
+
+[vars]
+# Set REMOVE_BG_API_KEY in Cloudflare Pages project settings, not here.
