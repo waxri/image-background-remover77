@@ -36,7 +36,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
-  const canDownload = status === "success" && preview?.resultUrl;
+  const canDownload = status === "success" && Boolean(preview?.resultUrl);
   const helperText = useMemo(() => {
     if (status === "processing") return "Removing the background...";
     if (status === "success") return "Your transparent PNG is ready.";
@@ -131,17 +131,6 @@ export default function Home() {
     setIsDragging(false);
     const file = event.dataTransfer.files?.[0];
     if (file) void processFile(file);
-  }
-
-  function downloadResult() {
-    if (!preview?.resultUrl) return;
-
-    const link = document.createElement("a");
-    link.href = preview.resultUrl;
-    link.download = `removed-background-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
   }
 
   return (
@@ -258,15 +247,25 @@ export default function Home() {
             </div>
 
             <div className="mx-auto mt-7 flex max-w-xl flex-col gap-3">
-              <button
-                className="button-primary h-12"
-                type="button"
-                onClick={downloadResult}
-                disabled={!canDownload}
-              >
-                <DownloadIcon />
-                Download PNG
-              </button>
+              {canDownload && preview?.resultUrl ? (
+                <a
+                  className="button-primary h-12"
+                  href={preview.resultUrl}
+                  download={`removed-background-${preview.fileName.replace(/\.[^/.]+$/, "")}.png`}
+                >
+                  <DownloadIcon />
+                  Download PNG
+                </a>
+              ) : (
+                <button
+                  className="button-primary h-12"
+                  type="button"
+                  disabled
+                >
+                  <DownloadIcon />
+                  Download PNG
+                </button>
+              )}
               <button
                 className="button-secondary h-11"
                 type="button"
