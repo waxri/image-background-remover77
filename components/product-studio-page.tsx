@@ -15,10 +15,24 @@ import {
   getOutputExtension,
   OutputFormat,
 } from "@/lib/image-pipeline";
+import { FAQ_ITEMS } from "@/lib/site-content";
 
 type Platform = "amazon" | "shopify" | "custom";
 type Background = "white" | "transparent" | "color";
-type ProcessStatus = "demo" | "processing" | "ready" | "error";
+type ProcessStatus = "demo" | "validating" | "processing" | "ready" | "error";
+type ComplianceStatus = "pass" | "warning" | "fail" | "manual";
+
+type ComplianceItem = {
+  label: string;
+  detail: string;
+  status: ComplianceStatus;
+};
+
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+  retryAfter?: number;
+};
 
 type ProductStudioPageProps = {
   variant: "amazon" | "background";
@@ -48,6 +62,7 @@ declare global {
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const FREE_IMAGE_LIMIT = 3;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -64,14 +79,14 @@ const pricingPlans = [
     price: "$5.90",
     images: "40 images",
     unit: "$0.15 / image",
-    cta: "Buy 40 credits",
+    cta: "Join early access",
   },
   {
     name: "Seller",
     price: "$12.90",
     images: "120 images",
     unit: "$0.11 / image",
-    cta: "Buy 120 credits",
+    cta: "Join early access",
     featured: true,
   },
   {
@@ -79,30 +94,7 @@ const pricingPlans = [
     price: "$24.90",
     images: "300 images",
     unit: "$0.08 / image",
-    cta: "Buy 300 credits",
-  },
-];
-
-const faqItems = [
-  {
-    question: "Do you store my product photos?",
-    answer:
-      "No. Images are processed for the current request and are not kept in a permanent library.",
-  },
-  {
-    question: "Does this guarantee Amazon approval?",
-    answer:
-      "No. The checker applies practical tests based on public platform guidelines. Amazon may also review category-specific and listing-level requirements.",
-  },
-  {
-    question: "Can I download a transparent PNG?",
-    answer:
-      "Yes. Choose Transparent in the background controls and the output automatically switches to PNG.",
-  },
-  {
-    question: "What products work best?",
-    answer:
-      "Products with clear, opaque outlines work best: home goods, packaged items, tools, toys, and electronics accessories.",
+    cta: "Join early access",
   },
 ];
 
@@ -136,6 +128,24 @@ function CheckIcon({ small = false }: { small?: boolean }) {
       viewBox="0 0 24 24"
     >
       <path d="m5 12.5 4.2 4.2L19 7" />
+    </svg>
+  );
+}
+
+function StatusIcon({ status }: { status: ComplianceStatus }) {
+  if (status === "pass") return <CheckIcon small />;
+  if (status === "manual") {
+    return (
+      <svg aria-hidden="true" className="status-icon" viewBox="0 0 24 24">
+        <path d="M2.7 12s3.4-5.3 9.3-5.3 9.3 5.3 9.3 5.3-3.4 5.3-9.3 5.3S2.7 12 2.7 12Z" />
+        <circle cx="12" cy="12" r="2.4" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" className="status-icon" viewBox="0 0 24 24">
+      <path d="M12 3.5 21 20H3L12 3.5Z" />
+      <path d="M12 9v5m0 3h.01" />
     </svg>
   );
 }
@@ -244,7 +254,7 @@ function TurnstileGate({
   }, [resetKey]);
 
   if (!TURNSTILE_SITE_KEY) return null;
-  return <div ref={containerRef} className="turnstile-slot" aria-hidden="true" />;
+  return <div ref={containerRef} className="turnstile-slot" aria-label="Security verification" />;
 }
 
 export function ProductStudioPage({ variant }: ProductStudioPageProps) {
@@ -254,34 +264,39 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   const originalObjectUrlRef = useRef<string | null>(null);
   const resultObjectUrlRef = useRef<string | null>(null);
   const renderVersionRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const secondImageTrackedRef = useRef(false);
 
   const [platform, setPlatform] = useState<Platform>("amazon");
   const [background, setBackground] = useState<Background>("white");
   const [backgroundColor, setBackgroundColor] = useState("#e8f0ff");
   const [coverage, setCoverage] = useState(90);
   const [format, setFormat] = useState<OutputFormat>("image/jpeg");
-  const [customWidth, setCustomWidth] = useState(1200);
-  const [customHeight, setCustomHeight] = useState(1200);
+  const [customSize, setCustomSize] = useState(1600);
   const [status, setStatus] = useState<ProcessStatus>("demo");
   const [isDragging, setIsDragging] = useState(false);
   const [sourceName, setSourceName] = useState("drill");
   const [originalUrl, setOriginalUrl] = useState("/sample-before.jpg");
   const [resultUrl, setResultUrl] = useState("/sample-after.jpg");
   const [resultSize, setResultSize] = useState("1.1 MB");
+  const [resultBytes, setResultBytes] = useState(1.1 * 1024 * 1024);
   const [error, setError] = useState("");
   const [cutoutVersion, setCutoutVersion] = useState(0);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [dialogPlan, setDialogPlan] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<"original" | "result">("result");
+  const [successfulImages, setSuccessfulImages] = useState(0);
 
   const outputSize = useMemo(() => {
     if (platform === "amazon") return { width: 1600, height: 1600 };
     if (platform === "shopify") return { width: 2048, height: 2048 };
+    const size = Math.min(5000, Math.max(500, customSize || 500));
     return {
-      width: Math.min(5000, Math.max(500, customWidth || 500)),
-      height: Math.min(5000, Math.max(500, customHeight || 500)),
+      width: size,
+      height: size,
     };
-  }, [customHeight, customWidth, platform]);
+  }, [customSize, platform]);
 
   const extension = getOutputExtension(format);
   const downloadName = `${baseFileName(sourceName)}-main-${platform}.${extension}`;
@@ -299,7 +314,17 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
         };
 
   useEffect(() => {
+    const savedColor = window.sessionStorage.getItem("listingready:background-color");
+    if (savedColor && /^#[0-9a-f]{6}$/i.test(savedColor)) setBackgroundColor(savedColor);
+    const savedUsage = Number(window.sessionStorage.getItem("listingready:successful-images"));
+    if (Number.isFinite(savedUsage) && savedUsage > 0) {
+      setSuccessfulImages(Math.min(savedUsage, FREE_IMAGE_LIMIT));
+    }
+  }, []);
+
+  useEffect(() => {
     return () => {
+      abortControllerRef.current?.abort();
       bitmapRef.current?.close();
       if (originalObjectUrlRef.current) URL.revokeObjectURL(originalObjectUrlRef.current);
       if (resultObjectUrlRef.current) URL.revokeObjectURL(resultObjectUrlRef.current);
@@ -328,6 +353,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           resultObjectUrlRef.current = nextUrl;
           setResultUrl(nextUrl);
           setResultSize(formatBytes(blob.size));
+          setResultBytes(blob.size);
           setStatus("ready");
         })
         .catch((caught) => {
@@ -343,29 +369,59 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     };
   }, [background, backgroundColor, coverage, cutoutVersion, format, outputSize]);
 
-  function validateFile(file: File) {
+  async function validateFile(file: File) {
     if (!ACCEPTED_TYPES.has(file.type)) return "Please upload a JPG, PNG, or WebP image.";
     if (file.size > MAX_FILE_SIZE) return "Please upload an image smaller than 10 MB.";
+    try {
+      const decoded = await createImageBitmap(file);
+      const invalidDimensions = decoded.width < 1 || decoded.height < 1;
+      decoded.close();
+      if (invalidDimensions) return "The image has invalid dimensions. Please choose another file.";
+    } catch {
+      return "This image could not be decoded. Please export it again as JPG, PNG, or WebP.";
+    }
     return "";
   }
 
   async function processFile(file: File) {
-    const validationError = validateFile(file);
+    abortControllerRef.current?.abort();
+    setError("");
+    setStatus("validating");
+    const validationError = await validateFile(file);
     if (validationError) {
       setError(validationError);
       setStatus("error");
+      track("image_upload_rejected", { reason: "invalid_file" });
+      return;
+    }
+    if (successfulImages >= FREE_IMAGE_LIMIT) {
+      setError("You have used the three free test images in this browser session.");
+      setStatus("error");
+      setDialogPlan("Free limit");
+      track("image_upload_rejected", { reason: "free_limit" });
       return;
     }
     if (TURNSTILE_SITE_KEY && !turnstileToken) {
       setError("Security check is still loading. Please try again in a moment.");
       setStatus("error");
+      track("image_upload_rejected", { reason: "verification_not_ready" });
       return;
     }
 
-    track("image_upload_started", { platform, type: file.type, bytes: file.size });
+    if (successfulImages > 0 && !secondImageTrackedRef.current) {
+      secondImageTrackedRef.current = true;
+      track("second_image_started", { platform });
+    }
+
+    track("image_upload_started", {
+      platform,
+      type: file.type,
+      sizeBucket: file.size < 1024 * 1024 ? "under_1mb" : file.size < 5 * 1024 * 1024 ? "1_to_5mb" : "5_to_10mb",
+    });
     setError("");
     setStatus("processing");
     setSourceName(file.name);
+    setPreviewMode("result");
 
     if (originalObjectUrlRef.current) URL.revokeObjectURL(originalObjectUrlRef.current);
     const nextOriginalUrl = URL.createObjectURL(file);
@@ -376,37 +432,60 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     const formData = new FormData();
     formData.append("image", file);
     if (turnstileToken) formData.append("turnstileToken", turnstileToken);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      const response = await fetch("/api/remove-bg", { method: "POST", body: formData });
+      const response = await fetch("/api/remove-bg", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
       setTurnstileToken("");
       setTurnstileResetKey((key) => key + 1);
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error || "Background removal failed. Please try another photo.");
+        const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+        const retryCopy = body?.retryAfter ? ` Try again in ${body.retryAfter} seconds.` : "";
+        throw new Error(
+          `${body?.message || "Background removal failed. Please try another photo."}${retryCopy}`,
+        );
       }
 
       const cutout = await response.blob();
       const bitmap = await createImageBitmap(cutout);
-      const bounds = await findAlphaBounds(bitmap);
+      let bounds: AlphaBounds;
+      try {
+        bounds = await findAlphaBounds(bitmap);
+      } catch (caught) {
+        bitmap.close();
+        throw caught;
+      }
       bitmapRef.current?.close();
       bitmapRef.current = bitmap;
       boundsRef.current = bounds;
       setCutoutVersion((version) => version + 1);
+      setSuccessfulImages((previous) => {
+        const next = Math.min(previous + 1, FREE_IMAGE_LIMIT);
+        window.sessionStorage.setItem("listingready:successful-images", String(next));
+        return next;
+      });
       track("background_removal_succeeded", { platform });
     } catch (caught) {
       if (TURNSTILE_SITE_KEY) {
         setTurnstileToken("");
         setTurnstileResetKey((key) => key + 1);
       }
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The service is temporarily unavailable. Please try again.",
-      );
+      const cancelled = caught instanceof DOMException && caught.name === "AbortError";
+      setError(cancelled ? "Processing cancelled. Your original photo is still available." : caught instanceof Error ? caught.message : "The service is temporarily unavailable. Please try again.");
       setStatus("error");
-      track("background_removal_failed", { platform });
+      track(cancelled ? "background_removal_cancelled" : "background_removal_failed", { platform });
+    } finally {
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
+  }
+
+  function cancelProcessing() {
+    abortControllerRef.current?.abort();
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -424,12 +503,15 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
 
   function choosePlatform(nextPlatform: Platform) {
     setPlatform(nextPlatform);
-    setCoverage(90);
+    setCoverage(nextPlatform === "shopify" ? 86 : 90);
     if (nextPlatform === "amazon") {
       setBackground("white");
       setFormat("image/jpeg");
     }
-    if (nextPlatform === "shopify") setFormat("image/png");
+    if (nextPlatform === "shopify") {
+      setBackground("white");
+      setFormat("image/png");
+    }
     track("preset_selected", { platform: nextPlatform });
   }
 
@@ -438,27 +520,57 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     if (nextBackground === "transparent" && format === "image/jpeg") {
       setFormat("image/png");
     }
+    track("settings_changed", { setting: "background", value: nextBackground, platform });
+  }
+
+  function chooseBackgroundColor(nextColor: string) {
+    setBackgroundColor(nextColor);
+    window.sessionStorage.setItem("listingready:background-color", nextColor);
+    track("settings_changed", { setting: "background_color", platform });
   }
 
   const isResultReady = status === "demo" || status === "ready";
-  const complianceItems = [
+  const isAmazon = platform === "amazon";
+  const longestEdge = Math.max(outputSize.width, outputSize.height);
+  const complianceItems: ComplianceItem[] = [
     {
       label: platform === "amazon" ? "Pure white background" : "Selected background applied",
-      pass: platform !== "amazon" || background === "white",
+      detail: isAmazon && background !== "white" ? "Amazon main images should use pure white." : "Background preset applied.",
+      status: isAmazon && background !== "white" ? "fail" : "pass",
     },
     {
       label: `${outputSize.width} × ${outputSize.height}`,
-      pass: platform !== "amazon" || Math.max(outputSize.width, outputSize.height) >= 1000,
+      detail: !isAmazon || longestEdge >= 1600 ? "Recommended output size." : longestEdge >= 1000 ? "Meets the minimum; 1600px is recommended." : "Increase the longest edge to at least 1000px.",
+      status: !isAmazon || longestEdge >= 1600 ? "pass" : longestEdge >= 1000 ? "warning" : "fail",
     },
-    { label: "Product fully visible", pass: isResultReady },
-    { label: `${coverage}% frame coverage`, pass: coverage >= 85 && coverage <= 95 },
-    { label: `${extension.toUpperCase()} · ${resultSize}`, pass: isResultReady },
+    {
+      label: "Product fully visible",
+      detail: isResultReady ? "Alpha bounds remain inside the canvas." : "Waiting for a finished result.",
+      status: isResultReady ? "pass" : "warning",
+    },
+    {
+      label: `${coverage}% frame coverage`,
+      detail: coverage >= 85 && coverage <= 95 ? "Within the suggested Amazon range." : "Aim for roughly 85%–95% frame coverage.",
+      status: !isAmazon || (coverage >= 85 && coverage <= 95) ? "pass" : "warning",
+    },
+    {
+      label: `${extension.toUpperCase()} · ${resultSize}`,
+      detail: resultBytes <= 10 * 1024 * 1024 ? "Supported format and manageable file size." : "Reduce dimensions or quality before uploading.",
+      status: !isResultReady ? "warning" : resultBytes <= 10 * 1024 * 1024 ? "pass" : "warning",
+    },
     {
       label: background === "transparent" ? "Transparent pixels kept" : "No transparent background",
-      pass: platform !== "amazon" || background !== "transparent",
+      detail: isAmazon && background === "transparent" ? "Amazon exports should convert transparency to white." : "Transparency matches the selected preset.",
+      status: isAmazon && background === "transparent" ? "fail" : "pass",
+    },
+    {
+      label: "Text, border, and watermark review",
+      detail: "Confirm these visually before publishing.",
+      status: "manual",
     },
   ];
-  const allChecksPass = complianceItems.every((item) => item.pass) && isResultReady;
+  const hasFailedCheck = complianceItems.some((item) => item.status === "fail");
+  const isPresetReady = isResultReady && !hasFailedCheck;
 
   return (
     <main>
@@ -471,7 +583,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           <nav className="main-nav" aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
             <a href="#pricing">Pricing</a>
-            <a href="#amazon-guide">Amazon image guide</a>
+            <a href="#faq">FAQ</a>
           </nav>
           <button className="button button-quiet" type="button" onClick={() => setDialogPlan("Account access")}>Sign in</button>
         </div>
@@ -526,7 +638,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
             >
               <span className="upload-icon-wrap"><UploadIcon /></span>
               <strong>Drop a product photo here</strong>
-              <span>JPG, PNG or WebP · up to 10 MB</span>
+              <span>{status === "validating" ? "Checking image…" : "JPG, PNG or WebP · up to 10 MB"}</span>
               <button
                 className="button button-primary choose-button"
                 type="button"
@@ -535,16 +647,25 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                   fileInputRef.current?.click();
                 }}
               >
-                Choose photo
+                {isResultReady && status !== "demo" ? "Choose another photo" : "Choose photo"}
               </button>
             </div>
             <div className="privacy-line" id="privacy"><LockIcon />Your images are processed securely and never stored.</div>
+            <p className="free-usage" aria-live="polite">
+              {successfulImages === 0
+                ? `${FREE_IMAGE_LIMIT} free full-resolution test images in this session.`
+                : `${successfulImages} of ${FREE_IMAGE_LIMIT} free test ${successfulImages === 1 ? "image" : "images"} used.`}
+            </p>
             <TurnstileGate onToken={setTurnstileToken} resetKey={turnstileResetKey} />
           </section>
 
           <section className="preview-pane" aria-label="Original and result preview">
+            <div className="mobile-preview-toggle" role="group" aria-label="Preview image">
+              <button className={previewMode === "original" ? "active" : ""} type="button" onClick={() => setPreviewMode("original")}>Original</button>
+              <button className={previewMode === "result" ? "active" : ""} type="button" onClick={() => setPreviewMode("result")}>Result</button>
+            </div>
             <div className="preview-grid">
-              <PreviewFrame label="Original" imageUrl={originalUrl} />
+              <PreviewFrame label="Original" imageUrl={originalUrl} mobileHidden={previewMode !== "original"} />
               <div className="preview-arrow"><ArrowIcon /></div>
               <PreviewFrame
                 label={platform === "amazon" ? "Amazon-ready" : "Listing-ready"}
@@ -552,12 +673,14 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 imageUrl={resultUrl}
                 loading={status === "processing"}
                 transparent={background === "transparent"}
+                mobileHidden={previewMode !== "result"}
               />
             </div>
-            <div className={allChecksPass ? "ready-line pass" : "ready-line"} aria-live="polite">
-              {status === "processing" ? "Removing background…" : status === "error" ? "Needs attention" : allChecksPass ? `${platformLabels[platform]}-ready` : "Adjust settings"}
-              {allChecksPass ? <CheckIcon small /> : null}
+            <div className={isPresetReady ? "ready-line pass" : "ready-line"} aria-live="polite">
+              {status === "validating" ? "Checking image…" : status === "processing" ? "Removing background…" : status === "error" ? "Needs attention" : isPresetReady ? `${platformLabels[platform]} preset ready` : "Review the failed checks"}
+              {isPresetReady ? <CheckIcon small /> : null}
             </div>
+            {status === "processing" ? <button className="cancel-button" type="button" onClick={cancelProcessing}>Cancel processing</button> : null}
             {error ? <p className="error-message" role="alert">{error}</p> : null}
           </section>
 
@@ -581,7 +704,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
               </div>
               {background === "color" ? (
                 <label className="color-input-label">Color
-                  <input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} />
+                  <input type="color" value={backgroundColor} onChange={(event) => chooseBackgroundColor(event.target.value)} />
                 </label>
               ) : null}
             </fieldset>
@@ -591,20 +714,21 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
               id="product-size"
               className="range-input"
               type="range"
-              min="75"
+              min="70"
               max="95"
               step="1"
               value={coverage}
               onChange={(event) => setCoverage(Number(event.target.value))}
+              onPointerUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
+              onKeyUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
             />
 
             <div className="control-block">
               <span className="control-label">Output</span>
               {platform === "custom" ? (
                 <div className="custom-size">
-                  <input aria-label="Output width" type="number" min="500" max="5000" value={customWidth} onChange={(event) => setCustomWidth(Number(event.target.value))} />
-                  <span>×</span>
-                  <input aria-label="Output height" type="number" min="500" max="5000" value={customHeight} onChange={(event) => setCustomHeight(Number(event.target.value))} />
+                  <input aria-label="Square output size" type="number" min="500" max="5000" value={customSize} onChange={(event) => setCustomSize(Number(event.target.value))} />
+                  <span>× {outputSize.height}</span>
                 </div>
               ) : (
                 <div className="static-select">{outputSize.width} × {outputSize.height}</div>
@@ -618,6 +742,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                     onClick={() => {
                       setFormat(item);
                       if (item === "image/jpeg" && background === "transparent") setBackground("white");
+                      track("settings_changed", { setting: "format", value: item, platform });
                     }}
                   >
                     {getOutputExtension(item).toUpperCase()}
@@ -629,9 +754,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
             <div className="checklist">
               <strong>Compliance checklist</strong>
               {complianceItems.map((item) => (
-                <div className={item.pass ? "check-row pass" : "check-row warn"} key={item.label}>
-                  <CheckIcon small />
-                  <span>{item.label}</span>
+                <div className={`check-row ${item.status}`} key={item.label} title={item.detail}>
+                  <StatusIcon status={item.status} />
+                  <span><strong>{item.label}</strong><small>{item.detail}</small></span>
                 </div>
               ))}
             </div>
@@ -655,7 +780,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
 
         <div className="trust-band">
           <div className="trust-lead">Built for sellers who need<br />compliant images, fast.</div>
-          <TrustItem title="Amazon-compliant">Practical checks for the main image requirements.</TrustItem>
+          <TrustItem title="Amazon-focused">Practical checks for the main image requirements.</TrustItem>
           <TrustItem title="Save time">Upload, adjust, check, and download in one place.</TrustItem>
           <TrustItem title="Secure and private">Images are processed for the request, not archived.</TrustItem>
         </div>
@@ -696,7 +821,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           </figure>
         </div>
         <p className="guideline-note" id="amazon-guide">Checks are based on public platform guidelines and do not guarantee listing approval.</p>
-        <a className="text-link" href="#tool">Read the Amazon image guide <span>→</span></a>
+        <a className="text-link" href="#tool">Make an Amazon-ready image <span>→</span></a>
       </section>
 
       <section className="pricing-section" id="pricing">
@@ -738,7 +863,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       <section className="faq-section shell" id="faq">
         <h2>Frequently asked questions</h2>
         <div className="faq-list">
-          {faqItems.map((item, index) => (
+          {FAQ_ITEMS.map((item, index) => (
             <details key={item.question} open={index === 0}>
               <summary>{item.question}</summary>
               <p>{item.answer}</p>
@@ -757,8 +882,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
         <nav aria-label="Footer navigation">
           <a href="/">Amazon Product Photo Maker</a>
           <a href="/image-background-remover">Image Background Remover</a>
-          <a href="#privacy">Privacy</a>
-          <a href="#faq">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/contact">Contact</a>
         </nav>
       </footer>
 
@@ -766,7 +892,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
         <div className="dialog-backdrop" role="presentation" onMouseDown={() => setDialogPlan(null)}>
           <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" onMouseDown={(event) => event.stopPropagation()}>
             <button className="dialog-close" type="button" aria-label="Close" onClick={() => setDialogPlan(null)}>×</button>
-            <h2 id="dialog-title">{dialogPlan === "Account access" ? "Accounts are coming with checkout." : `${dialogPlan} checkout is next.`}</h2>
+            <h2 id="dialog-title">{dialogPlan === "Account access" ? "Accounts are coming with checkout." : dialogPlan === "Free limit" ? "Your free test is complete." : `${dialogPlan} early access`}</h2>
             <p>The editor is ready to test now. Email login, credit packs, and automatic refunds belong to the paid milestone and are intentionally not simulated in this P0 build.</p>
             <button className="button button-primary" type="button" onClick={() => {
               setDialogPlan(null);
@@ -785,15 +911,17 @@ function PreviewFrame({
   imageUrl,
   loading = false,
   transparent = false,
+  mobileHidden = false,
 }: {
   label: string;
   note?: string;
   imageUrl: string;
   loading?: boolean;
   transparent?: boolean;
+  mobileHidden?: boolean;
 }) {
   return (
-    <figure className="preview-card">
+    <figure className={mobileHidden ? "preview-card mobile-hidden" : "preview-card"}>
       <figcaption><strong>{label}</strong>{note ? <span>{note}</span> : null}</figcaption>
       <div className={transparent ? "preview-image checkerboard" : "preview-image"}>
         <span className="ruler ruler-top" aria-hidden="true" />

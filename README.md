@@ -1,6 +1,6 @@
 # ListingReady
 
-ListingReady turns ordinary product photos into marketplace-ready images for small ecommerce sellers. It uses a Cloudflare Pages Function to call Remove.bg, then performs alpha-bound detection, centering, background composition, compliance checks, and JPG/PNG/WebP export in the browser.
+ListingReady is a Next.js and Tailwind CSS app that turns ordinary product photos into marketplace-ready images for small ecommerce sellers. It uses a Cloudflare Pages Function to call Remove.bg, then performs alpha-bound detection, centering, background composition, compliance checks, and JPG/PNG/WebP export in the browser.
 
 The homepage is intentionally focused on Amazon US main images. The existing background-removal SEO direction remains available at `/image-background-remover`.
 
@@ -13,6 +13,7 @@ The homepage is intentionally focused on Amazon US main images. The existing bac
 - Browser-side JPG, PNG, and WebP export
 - Cloudflare Turnstile and optional KV rate limiting
 - No persistent image storage
+- Privacy, terms, and contact routes for public launch readiness
 
 ## Local development
 
@@ -36,7 +37,9 @@ npx wrangler pages dev out
 - Output directory: `out`
 - Secrets: `REMOVE_BG_API_KEY`, `TURNSTILE_SECRET_KEY`
 - Recommended secret when KV limiting is enabled: `RATE_LIMIT_SALT`
-- Build variable: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+- Build variables: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `NEXT_PUBLIC_SITE_URL`
+- Optional build variable: `NEXT_PUBLIC_SUPPORT_EMAIL`
+- Optional runtime variables: `MAX_UPLOAD_BYTES`, `RATE_LIMIT_PER_MINUTE`
 - Optional KV binding: `RATE_LIMIT`
 
 Images are streamed back to the browser and are not written to storage.

@@ -2,6 +2,8 @@ type Env = {
   REMOVE_BG_API_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
   RATE_LIMIT_SALT?: string;
+  MAX_UPLOAD_BYTES?: string;
+  RATE_LIMIT_PER_MINUTE?: string;
   RATE_LIMIT?: KVNamespace;
 };
 
@@ -11,17 +13,42 @@ type TurnstileResponse = {
   "error-codes"?: string[];
 };
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const REQUESTS_PER_MINUTE = 6;
+type ErrorCode =
+  | "invalid_file"
+  | "verification_failed"
+  | "file_too_large"
+  | "rate_limited"
+  | "provider_error"
+  | "service_unavailable"
+  | "method_not_allowed";
 
-function jsonError(message: string, status: number, retryAfter?: number) {
+const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const DEFAULT_REQUESTS_PER_MINUTE = 6;
+const UPSTREAM_TIMEOUT_MS = 25_000;
+
+function parseLimit(value: string | undefined, fallback: number, maximum: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), maximum);
+}
+
+function jsonError(
+  code: ErrorCode,
+  message: string,
+  status: number,
+  retryAfter?: number,
+) {
   const headers: Record<string, string> = {
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
   };
   if (retryAfter) headers["Retry-After"] = String(retryAfter);
-  return Response.json({ error: message }, { status, headers });
+  return Response.json(
+    { error: code, message, ...(retryAfter ? { retryAfter } : {}) },
+    { status, headers },
+  );
 }
 
 async function verifyTurnstile(
@@ -45,9 +72,7 @@ async function verifyTurnstile(
 
 async function createRateLimitKey(remoteIp: string, salt?: string) {
   const windowId = Math.floor(Date.now() / 60_000);
-  if (!salt) return `remove-bg:${remoteIp}:${windowId}`;
-
-  const input = new TextEncoder().encode(`${salt}:${remoteIp}`);
+  const input = new TextEncoder().encode(`${salt || "listingready-rate-limit"}:${remoteIp}`);
   const digest = await crypto.subtle.digest("SHA-256", input);
   const fingerprint = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -59,78 +84,177 @@ async function isRateLimited(env: Env, remoteIp: string) {
   if (!env.RATE_LIMIT || remoteIp === "unknown") return false;
   const key = await createRateLimitKey(remoteIp, env.RATE_LIMIT_SALT);
   const current = Number((await env.RATE_LIMIT.get(key)) || "0");
-  if (current >= REQUESTS_PER_MINUTE) return true;
+  const requestLimit = parseLimit(
+    env.RATE_LIMIT_PER_MINUTE,
+    DEFAULT_REQUESTS_PER_MINUTE,
+    60,
+  );
+  if (current >= requestLimit) return true;
   await env.RATE_LIMIT.put(key, String(current + 1), { expirationTtl: 120 });
+  return false;
+}
+
+async function hasValidImageSignature(image: File) {
+  const bytes = new Uint8Array(await image.slice(0, 12).arrayBuffer());
+  if (image.type === "image/jpeg") {
+    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (image.type === "image/png") {
+    return (
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    );
+  }
+  if (image.type === "image/webp") {
+    return (
+      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+    );
+  }
   return false;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!env.REMOVE_BG_API_KEY) {
-    return jsonError("Background removal is not configured yet.", 503);
+    return jsonError(
+      "service_unavailable",
+      "Background removal is not configured yet.",
+      503,
+    );
   }
 
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
-    return jsonError("Please upload an image using multipart form data.", 400);
+    return jsonError(
+      "invalid_file",
+      "Please upload an image using multipart form data.",
+      400,
+    );
   }
 
   const remoteIp = request.headers.get("CF-Connecting-IP") || "unknown";
   if (await isRateLimited(env, remoteIp)) {
-    return jsonError("Too many requests. Please wait a minute and try again.", 429, 60);
+    return jsonError(
+      "rate_limited",
+      "Too many requests. Please wait a minute and try again.",
+      429,
+      60,
+    );
   }
 
   let formData: FormData;
   try {
     formData = await request.formData();
   } catch {
-    return jsonError("Could not read the uploaded image.", 400);
+    return jsonError("invalid_file", "Could not read the uploaded image.", 400);
+  }
+
+  const hostname = new URL(request.url).hostname;
+  const isLocalRequest = hostname === "localhost" || hostname === "127.0.0.1";
+  if (!env.TURNSTILE_SECRET_KEY && !isLocalRequest) {
+    return jsonError(
+      "service_unavailable",
+      "Security verification is not configured yet.",
+      503,
+    );
   }
 
   if (env.TURNSTILE_SECRET_KEY) {
     const token = formData.get("turnstileToken");
     if (typeof token !== "string" || !token) {
-      return jsonError("Security check is required. Please refresh and try again.", 403);
+      return jsonError(
+        "verification_failed",
+        "Security check is required. Please refresh and try again.",
+        403,
+      );
     }
     try {
       if (!(await verifyTurnstile(token, env.TURNSTILE_SECRET_KEY, remoteIp))) {
-        return jsonError("Security check failed. Please refresh and try again.", 403);
+        return jsonError(
+          "verification_failed",
+          "Security check failed. Please refresh and try again.",
+          403,
+        );
       }
     } catch {
-      return jsonError("Security check is temporarily unavailable.", 503);
+      return jsonError(
+        "service_unavailable",
+        "Security check is temporarily unavailable.",
+        503,
+      );
     }
   }
 
   const image = formData.get("image");
   if (!(image instanceof File)) {
-    return jsonError("Missing image. Please upload a JPG, PNG, or WebP file.", 400);
+    return jsonError(
+      "invalid_file",
+      "Missing image. Please upload a JPG, PNG, or WebP file.",
+      400,
+    );
   }
   if (!ACCEPTED_TYPES.has(image.type)) {
-    return jsonError("Please upload a JPG, PNG, or WebP image.", 400);
+    return jsonError("invalid_file", "Please upload a JPG, PNG, or WebP image.", 400);
   }
-  if (image.size > MAX_FILE_SIZE) {
-    return jsonError("Please upload an image smaller than 10 MB.", 413);
+  const maxFileSize = parseLimit(env.MAX_UPLOAD_BYTES, DEFAULT_MAX_FILE_SIZE, 20 * 1024 * 1024);
+  if (image.size > maxFileSize) {
+    return jsonError(
+      "file_too_large",
+      `Please upload an image smaller than ${Math.round(maxFileSize / 1024 / 1024)} MB.`,
+      413,
+    );
+  }
+  if (!(await hasValidImageSignature(image))) {
+    return jsonError(
+      "invalid_file",
+      "The file contents do not match a supported JPG, PNG, or WebP image.",
+      400,
+    );
   }
 
   const removeBgFormData = new FormData();
   removeBgFormData.append("image_file", image, image.name || "upload.png");
   removeBgFormData.append("size", "auto");
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   let removeBgResponse: Response;
   try {
     removeBgResponse = await fetch("https://api.remove.bg/v1.0/removebg", {
       method: "POST",
       headers: { "X-Api-Key": env.REMOVE_BG_API_KEY },
       body: removeBgFormData,
+      signal: controller.signal,
     });
   } catch {
-    return jsonError("Background removal is temporarily unavailable.", 502);
+    return jsonError(
+      "provider_error",
+      "Background removal timed out or is temporarily unavailable.",
+      502,
+    );
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!removeBgResponse.ok) {
     if (removeBgResponse.status === 402 || removeBgResponse.status === 429) {
-      return jsonError("Processing capacity is temporarily unavailable. Please try again later.", 503);
+      return jsonError(
+        "service_unavailable",
+        "Processing capacity is temporarily unavailable. Please try again later.",
+        503,
+      );
     }
-    return jsonError("Background removal failed. Please try another image.", 502);
+    return jsonError(
+      "provider_error",
+      "Background removal failed. Please try another image.",
+      502,
+    );
   }
 
   return new Response(removeBgResponse.body, {
@@ -143,7 +267,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 const methodNotAllowed: PagesFunction<Env> = async () =>
-  jsonError("Method not allowed.", 405);
+  jsonError("method_not_allowed", "Method not allowed. Use POST.", 405);
 
 export const onRequestGet = methodNotAllowed;
 export const onRequestPut = methodNotAllowed;
