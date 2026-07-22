@@ -94,30 +94,36 @@ async function isRateLimited(env: Env, remoteIp: string) {
   return false;
 }
 
-async function hasValidImageSignature(image: File) {
+async function detectImageType(image: File) {
   const bytes = new Uint8Array(await image.slice(0, 12).arrayBuffer());
-  if (image.type === "image/jpeg") {
-    return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
   }
-  if (image.type === "image/png") {
-    return (
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47 &&
-      bytes[4] === 0x0d &&
-      bytes[5] === 0x0a &&
-      bytes[6] === 0x1a &&
-      bytes[7] === 0x0a
-    );
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
   }
-  if (image.type === "image/webp") {
-    return (
-      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
-      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
-    );
+  if (
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+  ) {
+    return "image/webp";
   }
-  return false;
+  return null;
+}
+
+function normalizedImageName(name: string, imageType: string) {
+  const baseName = (name || "upload").replace(/\.[^.]+$/, "") || "upload";
+  const extension = imageType === "image/jpeg" ? "jpg" : imageType.split("/")[1];
+  return `${baseName}.${extension}`;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -210,7 +216,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       413,
     );
   }
-  if (!(await hasValidImageSignature(image))) {
+  const detectedImageType = await detectImageType(image);
+  if (!detectedImageType) {
     return jsonError(
       "invalid_file",
       "The file contents do not match a supported JPG, PNG, or WebP image.",
@@ -219,7 +226,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const removeBgFormData = new FormData();
-  removeBgFormData.append("image_file", image, image.name || "upload.png");
+  const normalizedImage =
+    image.type === detectedImageType
+      ? image
+      : new Blob([image], { type: detectedImageType });
+  removeBgFormData.append(
+    "image_file",
+    normalizedImage,
+    normalizedImageName(image.name, detectedImageType),
+  );
   removeBgFormData.append("size", "auto");
 
   const controller = new AbortController();
