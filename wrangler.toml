@@ -1,6 +1,12 @@
-name = "image-background-remover77"
+name = "listingready"
 compatibility_date = "2026-07-19"
 pages_build_output_dir = "out"
 
 [vars]
-# Set REMOVE_BG_API_KEY in Cloudflare Pages project settings, not here.
+# Keep REMOVE_BG_API_KEY, TURNSTILE_SECRET_KEY, and RATE_LIMIT_SALT in
+# Cloudflare Pages secrets. NEXT_PUBLIC_TURNSTILE_SITE_KEY is a build variable.
+
+# Optional KV binding for best-effort per-IP request limiting:
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT"
+# id = "your-kv-namespace-id"

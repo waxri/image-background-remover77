@@ -1,5 +1,5 @@
 {
-  "name": "image-background-remover77",
+  "name": "listingready",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,11 +15,9 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250719.0",
-    "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^24.0.15",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "tailwindcss": "^4.1.11",
     "typescript": "^5.8.3"
   }
 }
