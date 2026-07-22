@@ -6,6 +6,8 @@ export type AlphaBounds = {
 };
 
 export type OutputFormat = "image/jpeg" | "image/png" | "image/webp";
+export type EdgeRefinement = "natural" | "crisp" | "detail";
+export type ShadowStyle = "none" | "soft" | "contact";
 
 export type ComposeOptions = {
   width: number;
@@ -14,10 +16,14 @@ export type ComposeOptions = {
   background: "white" | "transparent" | "color";
   backgroundColor: string;
   format: OutputFormat;
+  edgeRefinement: EdgeRefinement;
+  shadow: ShadowStyle;
+  quality: number;
 };
 
 const ALPHA_THRESHOLD = 10;
 const MAX_SCAN_EDGE = 768;
+const ALPHA_CHUNK_PIXELS = 2_000_000;
 
 function canvasToBlob(
   canvas: HTMLCanvasElement,
@@ -84,6 +90,103 @@ export async function findAlphaBounds(image: ImageBitmap): Promise<AlphaBounds> 
   };
 }
 
+function nextFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function refineAlphaEdge(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  mode: EdgeRefinement,
+) {
+  if (mode === "natural") return;
+
+  const rowsPerChunk = Math.max(1, Math.floor(ALPHA_CHUNK_PIXELS / width));
+  for (let startY = 0; startY < height; startY += rowsPerChunk) {
+    const chunkHeight = Math.min(rowsPerChunk, height - startY);
+    const imageData = context.getImageData(0, startY, width, chunkHeight);
+    const pixels = imageData.data;
+
+    for (let index = 3; index < pixels.length; index += 4) {
+      const normalized = pixels[index] / 255;
+      if (mode === "detail") {
+        pixels[index] = Math.round(255 * Math.pow(normalized, 0.84));
+        continue;
+      }
+
+      const contrasted = Math.min(1, Math.max(0, (normalized - 0.06) / 0.88));
+      pixels[index] = Math.round(
+        255 * contrasted * contrasted * (3 - 2 * contrasted),
+      );
+    }
+
+    context.putImageData(imageData, 0, startY);
+    if (height > rowsPerChunk) await nextFrame();
+  }
+}
+
+function expandedBounds(image: ImageBitmap, bounds: AlphaBounds) {
+  const padding = Math.max(2, Math.ceil(Math.max(bounds.width, bounds.height) * 0.004));
+  const x = Math.max(0, bounds.x - padding);
+  const y = Math.max(0, bounds.y - padding);
+  const right = Math.min(image.width, bounds.x + bounds.width + padding);
+  const bottom = Math.min(image.height, bounds.y + bounds.height + padding);
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+function drawProductShadow(
+  context: CanvasRenderingContext2D,
+  productCanvas: HTMLCanvasElement,
+  x: number,
+  y: number,
+  options: ComposeOptions,
+) {
+  if (options.shadow === "none") return;
+
+  const outputEdge = Math.min(options.width, options.height);
+  context.save();
+
+  if (options.shadow === "contact") {
+    const centerX = x + productCanvas.width / 2;
+    const centerY = y + productCanvas.height * 0.96;
+    context.globalAlpha = 0.2;
+    context.filter = `blur(${Math.max(5, outputEdge * 0.006)}px)`;
+    context.fillStyle = "#111827";
+    context.beginPath();
+    context.ellipse(
+      centerX,
+      centerY,
+      productCanvas.width * 0.29,
+      Math.max(4, productCanvas.height * 0.026),
+      0,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+    context.restore();
+    return;
+  }
+
+  const shadowCanvas = document.createElement("canvas");
+  shadowCanvas.width = productCanvas.width;
+  shadowCanvas.height = productCanvas.height;
+  const shadowContext = shadowCanvas.getContext("2d");
+  if (!shadowContext) {
+    context.restore();
+    return;
+  }
+  shadowContext.drawImage(productCanvas, 0, 0);
+  shadowContext.globalCompositeOperation = "source-in";
+  shadowContext.fillStyle = "#172033";
+  shadowContext.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+
+  context.globalAlpha = 0.17;
+  context.filter = `blur(${Math.max(7, outputEdge * 0.008)}px)`;
+  context.drawImage(shadowCanvas, x, y + outputEdge * 0.012);
+  context.restore();
+}
+
 export async function composeProductImage(
   image: ImageBitmap,
   bounds: AlphaBounds,
@@ -110,18 +213,39 @@ export async function composeProductImage(
   const scale = Math.min(targetWidth / bounds.width, targetHeight / bounds.height);
   const visibleWidth = bounds.width * scale;
   const visibleHeight = bounds.height * scale;
-  const offsetX = (options.width - visibleWidth) / 2 - bounds.x * scale;
-  const offsetY = (options.height - visibleHeight) / 2 - bounds.y * scale;
+  const sourceBounds = expandedBounds(image, bounds);
+  const productCanvas = document.createElement("canvas");
+  productCanvas.width = Math.max(1, Math.round(sourceBounds.width * scale));
+  productCanvas.height = Math.max(1, Math.round(sourceBounds.height * scale));
+  const productContext = productCanvas.getContext("2d", { willReadFrequently: true });
+  if (!productContext) throw new Error("Canvas is not available in this browser.");
 
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(
+  productContext.imageSmoothingEnabled = true;
+  productContext.imageSmoothingQuality = "high";
+  productContext.drawImage(
     image,
-    offsetX,
-    offsetY,
-    image.width * scale,
-    image.height * scale,
+    sourceBounds.x,
+    sourceBounds.y,
+    sourceBounds.width,
+    sourceBounds.height,
+    0,
+    0,
+    productCanvas.width,
+    productCanvas.height,
+  );
+  await refineAlphaEdge(
+    productContext,
+    productCanvas.width,
+    productCanvas.height,
+    options.edgeRefinement,
   );
 
-  return canvasToBlob(canvas, options.format);
+  const offsetX =
+    (options.width - visibleWidth) / 2 - (bounds.x - sourceBounds.x) * scale;
+  const offsetY =
+    (options.height - visibleHeight) / 2 - (bounds.y - sourceBounds.y) * scale;
+  drawProductShadow(context, productCanvas, offsetX, offsetY, options);
+  context.drawImage(productCanvas, offsetX, offsetY);
+
+  return canvasToBlob(canvas, options.format, options.quality);
 }

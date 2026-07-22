@@ -9,6 +9,10 @@ The homepage is intentionally focused on Amazon US main images. The existing bac
 - Amazon, Shopify, and custom output presets
 - Pure-white, transparent, and brand-color backgrounds
 - Automatic product centering and frame-coverage controls
+- One-click Amazon clean, soft-shadow, and transparent export recipes
+- Natural, crisp, and fine-detail edge refinement modes
+- Optional contact and soft product shadows
+- Standard/high export quality with source-resolution diagnostics
 - Amazon-oriented compliance checklist
 - Browser-side JPG, PNG, and WebP export
 - Cloudflare Turnstile and optional KV rate limiting

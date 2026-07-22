@@ -11,14 +11,18 @@ import {
 import {
   AlphaBounds,
   composeProductImage,
+  EdgeRefinement,
   findAlphaBounds,
   getOutputExtension,
   OutputFormat,
+  ShadowStyle,
 } from "@/lib/image-pipeline";
 import { FAQ_ITEMS } from "@/lib/site-content";
 
 type Platform = "amazon" | "shopify" | "custom";
 type Background = "white" | "transparent" | "color";
+type OutputQuality = "standard" | "high";
+type QuickRecipe = "amazon-clean" | "soft-shadow" | "transparent";
 type ProcessStatus = "demo" | "validating" | "processing" | "ready" | "error";
 type ComplianceStatus = "pass" | "warning" | "fail" | "manual";
 
@@ -32,6 +36,13 @@ type ApiErrorBody = {
   error?: string;
   message?: string;
   retryAfter?: number;
+};
+
+type CutoutInfo = {
+  width: number;
+  height: number;
+  boundsWidth: number;
+  boundsHeight: number;
 };
 
 type ProductStudioPageProps = {
@@ -70,6 +81,18 @@ const platformLabels: Record<Platform, string> = {
   amazon: "Amazon",
   shopify: "Shopify",
   custom: "Custom",
+};
+
+const edgeLabels: Record<EdgeRefinement, string> = {
+  natural: "Natural",
+  crisp: "Crisp",
+  detail: "Fine detail",
+};
+
+const shadowLabels: Record<ShadowStyle, string> = {
+  none: "None",
+  contact: "Contact",
+  soft: "Soft",
 };
 
 const pricingPlans = [
@@ -272,6 +295,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   const [backgroundColor, setBackgroundColor] = useState("#e8f0ff");
   const [coverage, setCoverage] = useState(90);
   const [format, setFormat] = useState<OutputFormat>("image/jpeg");
+  const [edgeRefinement, setEdgeRefinement] = useState<EdgeRefinement>("crisp");
+  const [shadow, setShadow] = useState<ShadowStyle>("none");
+  const [outputQuality, setOutputQuality] = useState<OutputQuality>("high");
   const [customSize, setCustomSize] = useState(1600);
   const [status, setStatus] = useState<ProcessStatus>("demo");
   const [isDragging, setIsDragging] = useState(false);
@@ -287,6 +313,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   const [dialogPlan, setDialogPlan] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"original" | "result">("result");
   const [successfulImages, setSuccessfulImages] = useState(0);
+  const [cutoutInfo, setCutoutInfo] = useState<CutoutInfo | null>(null);
 
   const outputSize = useMemo(() => {
     if (platform === "amazon") return { width: 1600, height: 1600 };
@@ -345,6 +372,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
         background,
         backgroundColor,
         format,
+        edgeRefinement,
+        shadow,
+        quality: outputQuality === "high" ? 0.96 : 0.88,
       })
         .then((blob) => {
           if (cancelled || renderVersion !== renderVersionRef.current) return;
@@ -367,7 +397,17 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [background, backgroundColor, coverage, cutoutVersion, format, outputSize]);
+  }, [
+    background,
+    backgroundColor,
+    coverage,
+    cutoutVersion,
+    edgeRefinement,
+    format,
+    outputQuality,
+    outputSize,
+    shadow,
+  ]);
 
   async function validateFile(file: File) {
     if (!ACCEPTED_TYPES.has(file.type)) return "Please upload a JPG, PNG, or WebP image.";
@@ -463,6 +503,12 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       bitmapRef.current?.close();
       bitmapRef.current = bitmap;
       boundsRef.current = bounds;
+      setCutoutInfo({
+        width: bitmap.width,
+        height: bitmap.height,
+        boundsWidth: bounds.width,
+        boundsHeight: bounds.height,
+      });
       setCutoutVersion((version) => version + 1);
       setSuccessfulImages((previous) => {
         const next = Math.min(previous + 1, FREE_IMAGE_LIMIT);
@@ -507,10 +553,13 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     if (nextPlatform === "amazon") {
       setBackground("white");
       setFormat("image/jpeg");
+      setEdgeRefinement("crisp");
+      setShadow("none");
     }
     if (nextPlatform === "shopify") {
       setBackground("white");
       setFormat("image/png");
+      setEdgeRefinement("natural");
     }
     track("preset_selected", { platform: nextPlatform });
   }
@@ -529,9 +578,74 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     track("settings_changed", { setting: "background_color", platform });
   }
 
+  function chooseEdgeRefinement(nextEdge: EdgeRefinement) {
+    setEdgeRefinement(nextEdge);
+    track("settings_changed", { setting: "edge_refinement", value: nextEdge, platform });
+  }
+
+  function chooseShadow(nextShadow: ShadowStyle) {
+    setShadow(nextShadow);
+    track("settings_changed", { setting: "shadow", value: nextShadow, platform });
+  }
+
+  function chooseOutputQuality(nextQuality: OutputQuality) {
+    setOutputQuality(nextQuality);
+    track("settings_changed", { setting: "output_quality", value: nextQuality, platform });
+  }
+
+  function applyQuickRecipe(recipe: QuickRecipe) {
+    if (recipe === "amazon-clean") {
+      setPlatform("amazon");
+      setBackground("white");
+      setCoverage(90);
+      setFormat("image/jpeg");
+      setEdgeRefinement("crisp");
+      setShadow("none");
+      setOutputQuality("high");
+    }
+    if (recipe === "soft-shadow") {
+      setBackground("white");
+      setCoverage(platform === "shopify" ? 86 : 88);
+      setFormat("image/jpeg");
+      setEdgeRefinement("natural");
+      setShadow("soft");
+      setOutputQuality("high");
+    }
+    if (recipe === "transparent") {
+      setBackground("transparent");
+      setFormat("image/png");
+      setEdgeRefinement("detail");
+      setShadow("none");
+      setOutputQuality("high");
+    }
+    track("quick_recipe_selected", { recipe, platform });
+  }
+
   const isResultReady = status === "demo" || status === "ready";
   const isAmazon = platform === "amazon";
   const longestEdge = Math.max(outputSize.width, outputSize.height);
+  const cutoutScale = cutoutInfo
+    ? Math.min(
+        (outputSize.width * (coverage / 100)) / cutoutInfo.boundsWidth,
+        (outputSize.height * (coverage / 100)) / cutoutInfo.boundsHeight,
+      )
+    : null;
+  const activeRecipe: QuickRecipe | null =
+    platform === "amazon" &&
+    background === "white" &&
+    coverage === 90 &&
+    format === "image/jpeg" &&
+    edgeRefinement === "crisp" &&
+    shadow === "none"
+      ? "amazon-clean"
+      : background === "white" && shadow === "soft"
+        ? "soft-shadow"
+        : background === "transparent" &&
+            format === "image/png" &&
+            edgeRefinement === "detail" &&
+            shadow === "none"
+          ? "transparent"
+          : null;
   const complianceItems: ComplianceItem[] = [
     {
       label: platform === "amazon" ? "Pure white background" : "Selected background applied",
@@ -549,6 +663,23 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       status: isResultReady ? "pass" : "warning",
     },
     {
+      label: cutoutInfo
+        ? `Cutout ${cutoutInfo.width} × ${cutoutInfo.height}`
+        : "Edge resolution check",
+      detail:
+        cutoutScale === null
+          ? "Upload an image to measure edge enlargement."
+          : cutoutScale <= 1.25
+            ? "Source pixels are sufficient for this output size."
+            : `${cutoutScale.toFixed(1)}× enlargement may soften fine edges. Try a larger source photo.`,
+      status:
+        cutoutScale === null
+          ? "manual"
+          : cutoutScale <= 1.25
+            ? "pass"
+            : "warning",
+    },
+    {
       label: `${coverage}% frame coverage`,
       detail: coverage >= 85 && coverage <= 95 ? "Within the suggested Amazon range." : "Aim for roughly 85%–95% frame coverage.",
       status: !isAmazon || (coverage >= 85 && coverage <= 95) ? "pass" : "warning",
@@ -563,6 +694,15 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       detail: isAmazon && background === "transparent" ? "Amazon exports should convert transparency to white." : "Transparency matches the selected preset.",
       status: isAmazon && background === "transparent" ? "fail" : "pass",
     },
+    ...(shadow === "none"
+      ? []
+      : [
+          {
+            label: shadow === "contact" ? "Contact shadow applied" : "Soft shadow applied",
+            detail: "Artificial shadows should be reviewed against marketplace image rules.",
+            status: "manual" as const,
+          },
+        ]),
     {
       label: "Text, border, and watermark review",
       detail: "Confirm these visually before publishing.",
@@ -669,7 +809,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
               <div className="preview-arrow"><ArrowIcon /></div>
               <PreviewFrame
                 label={platform === "amazon" ? "Amazon-ready" : "Listing-ready"}
-                note={background === "white" ? "White background" : background === "transparent" ? "Transparent" : "Brand color"}
+                note={`${background === "white" ? "White" : background === "transparent" ? "Transparent" : "Brand color"} · ${edgeLabels[edgeRefinement]} edge`}
                 imageUrl={resultUrl}
                 loading={status === "processing"}
                 transparent={background === "transparent"}
@@ -685,6 +825,36 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           </section>
 
           <aside className="settings-pane" aria-label="Output settings">
+            <div className="quick-recipes control-block">
+              <span className="control-label">Quick tasks</span>
+              <div className="recipe-options" aria-label="Quick task presets">
+                <button
+                  type="button"
+                  className={activeRecipe === "amazon-clean" ? "active" : ""}
+                  aria-pressed={activeRecipe === "amazon-clean"}
+                  onClick={() => applyQuickRecipe("amazon-clean")}
+                >
+                  Amazon clean
+                </button>
+                <button
+                  type="button"
+                  className={activeRecipe === "soft-shadow" ? "active" : ""}
+                  aria-pressed={activeRecipe === "soft-shadow"}
+                  onClick={() => applyQuickRecipe("soft-shadow")}
+                >
+                  Soft shadow
+                </button>
+                <button
+                  type="button"
+                  className={activeRecipe === "transparent" ? "active" : ""}
+                  aria-pressed={activeRecipe === "transparent"}
+                  onClick={() => applyQuickRecipe("transparent")}
+                >
+                  Transparent
+                </button>
+              </div>
+            </div>
+
             <fieldset>
               <legend>Background</legend>
               <div className="choice-stack">
@@ -709,19 +879,86 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
               ) : null}
             </fieldset>
 
-            <label className="control-label" htmlFor="product-size">Product size <span>{coverage}%</span></label>
-            <input
-              id="product-size"
-              className="range-input"
-              type="range"
-              min="70"
-              max="95"
-              step="1"
-              value={coverage}
-              onChange={(event) => setCoverage(Number(event.target.value))}
-              onPointerUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
-              onKeyUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
-            />
+            <div className="size-control control-block">
+              <label className="control-label" htmlFor="product-size">Product size <span>{coverage}%</span></label>
+              <input
+                id="product-size"
+                className="range-input"
+                type="range"
+                min="70"
+                max="95"
+                step="1"
+                value={coverage}
+                onChange={(event) => setCoverage(Number(event.target.value))}
+                onPointerUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
+                onKeyUp={() => track("settings_changed", { setting: "coverage", value: coverage, platform })}
+              />
+            </div>
+
+            <div className="enhance-block control-block">
+              <span className="control-label">Edge & detail</span>
+              <div className="segmented-setting" aria-label="Edge refinement">
+                {(Object.keys(edgeLabels) as EdgeRefinement[]).map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={edgeRefinement === item ? "active" : ""}
+                    aria-pressed={edgeRefinement === item}
+                    onClick={() => chooseEdgeRefinement(item)}
+                  >
+                    {edgeLabels[item]}
+                  </button>
+                ))}
+              </div>
+
+              <span className="control-label compact-label">Shadow</span>
+              <div className="segmented-setting" aria-label="Product shadow">
+                {(Object.keys(shadowLabels) as ShadowStyle[]).map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={shadow === item ? "active" : ""}
+                    aria-pressed={shadow === item}
+                    onClick={() => chooseShadow(item)}
+                  >
+                    {shadowLabels[item]}
+                  </button>
+                ))}
+              </div>
+
+              <span className="control-label compact-label">Export quality</span>
+              <div className="segmented-setting two-up" aria-label="Export quality">
+                {(["standard", "high"] as OutputQuality[]).map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={outputQuality === item ? "active" : ""}
+                    aria-pressed={outputQuality === item}
+                    onClick={() => chooseOutputQuality(item)}
+                  >
+                    {item === "standard" ? "Standard" : "High"}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                className={
+                  cutoutScale === null
+                    ? "quality-diagnostic"
+                    : cutoutScale <= 1.25
+                      ? "quality-diagnostic pass"
+                      : "quality-diagnostic warning"
+                }
+                aria-live="polite"
+              >
+                <strong>{cutoutScale === null ? "Quality check ready" : cutoutScale <= 1.25 ? "Source resolution looks strong" : "Source enlargement detected"}</strong>
+                <span>
+                  {cutoutInfo && cutoutScale !== null
+                    ? `${cutoutInfo.width} × ${cutoutInfo.height} cutout · ${cutoutScale.toFixed(1)}× render scale`
+                    : "Upload a photo to measure edge sharpness."}
+                </span>
+              </div>
+            </div>
 
             <div className="control-block">
               <span className="control-label">Output</span>
@@ -766,7 +1003,16 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 className="button button-primary download-button"
                 href={resultUrl}
                 download={downloadName}
-                onClick={() => track("image_downloaded", { platform, format, coverage })}
+                onClick={() =>
+                  track("image_downloaded", {
+                    platform,
+                    format,
+                    coverage,
+                    edgeRefinement,
+                    shadow,
+                    outputQuality,
+                  })
+                }
               >
                 <DownloadIcon /> Download {extension.toUpperCase()}
               </a>

@@ -236,6 +236,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     normalizedImageName(image.name, detectedImageType),
   );
   removeBgFormData.append("size", "auto");
+  removeBgFormData.append("type", "product");
+  removeBgFormData.append("format", "png");
+  removeBgFormData.append("channels", "rgba");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
@@ -258,6 +261,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (!removeBgResponse.ok) {
+    console.warn("remove.bg request failed", {
+      status: removeBgResponse.status,
+      requestId: removeBgResponse.headers.get("x-request-id") || "unknown",
+    });
     if (removeBgResponse.status === 402 || removeBgResponse.status === 429) {
       return jsonError(
         "service_unavailable",
