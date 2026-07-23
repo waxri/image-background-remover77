@@ -654,7 +654,7 @@ summary:focus-visible {
 
 .settings-pane legend,
 .control-label,
-.checklist > strong {
+.checklist-heading > strong {
   display: flex;
   width: 100%;
   align-items: center;
@@ -920,6 +920,27 @@ summary:focus-visible {
   gap: 7px;
 }
 
+.checklist-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.checklist-heading > strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.checklist-heading > span {
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .check-row {
   display: flex;
   align-items: flex-start;
@@ -992,6 +1013,149 @@ summary:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+}
+
+.export-center {
+  display: grid;
+  margin-top: 18px;
+  border: 1px solid #cbd9f4;
+  border-radius: 10px;
+  padding: 13px;
+  background: linear-gradient(160deg, #f8fbff 0%, #eef4ff 100%);
+  gap: 11px;
+}
+
+.export-center-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.export-center-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.export-center-heading strong {
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.feature-kicker {
+  color: var(--blue);
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.local-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgb(10 88 247 / 0.22);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: var(--white);
+  color: var(--blue);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.sku-field {
+  display: grid;
+  gap: 5px;
+}
+
+.sku-field > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 720;
+}
+
+.sku-field input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.pack-options {
+  display: grid;
+  gap: 5px;
+}
+
+.pack-option {
+  display: grid;
+  min-height: 40px;
+  align-items: center;
+  border: 1px solid rgb(174 185 201 / 0.7);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgb(255 255 255 / 0.82);
+  cursor: pointer;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pack-option:has(input:checked) {
+  border-color: rgb(10 88 247 / 0.5);
+  background: var(--white);
+}
+
+.pack-option input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--blue);
+}
+
+.pack-option > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.pack-option strong {
+  font-size: 9px;
+}
+
+.pack-option small {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button-pack {
+  width: 100%;
+  min-height: 39px;
+  border-color: #0b2456;
+  background: #0b2456;
+  color: var(--white);
+  box-shadow: 0 7px 16px rgb(11 36 86 / 0.15);
+  font-size: 10px;
+}
+
+.button-pack:hover:not(:disabled) {
+  background: #061a40;
+}
+
+.button-pack:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  box-shadow: none;
+}
+
+.pack-note {
+  margin: -3px 0 0;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
 }
 
 .trust-band {
@@ -1565,6 +1729,11 @@ summary:focus-visible {
 
   .settings-pane .checklist,
   .settings-pane .download-button {
+    margin-top: 0;
+  }
+
+  .settings-pane .export-center {
+    grid-column: 1 / -1;
     margin-top: 0;
   }
 

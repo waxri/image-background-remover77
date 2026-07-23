@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Amazon Product Photo Maker | ListingReady",
-    template: "%s | ListingReady",
+    default: "Amazon Product Photo Maker | MainPic",
+    template: "%s | MainPic",
   },
   description:
     "Turn ordinary product photos into listing-ready Amazon images with a pure white background, automatic centering, sizing, and compliance checks.",

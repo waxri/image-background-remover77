@@ -6,7 +6,7 @@ import { canonicalUrl } from "@/lib/site-metadata";
 const canonical = canonicalUrl("/");
 
 export const metadata: Metadata = {
-  title: { absolute: "Amazon Product Photo Maker | ListingReady" },
+  title: { absolute: "Amazon Product Photo Maker | MainPic" },
   description:
     "Turn ordinary product photos into listing-ready Amazon images with pure white backgrounds, automatic centering, sizing, and practical compliance checks.",
   ...(canonical ? { alternates: { canonical } } : {}),

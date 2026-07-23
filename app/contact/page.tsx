@@ -5,8 +5,8 @@ import { canonicalUrl } from "@/lib/site-metadata";
 const canonical = canonicalUrl("/contact");
 
 export const metadata: Metadata = {
-  title: { absolute: "Contact | ListingReady" },
-  description: "Contact ListingReady about product photo processing and early access.",
+  title: { absolute: "Contact | MainPic" },
+  description: "Contact MainPic about product photo processing and early access.",
   ...(canonical ? { alternates: { canonical } } : {}),
 };
 
@@ -23,7 +23,7 @@ export default function ContactPage() {
         {supportEmail ? (
           <p>
             Email <a href={`mailto:${supportEmail}`}>{supportEmail}</a> with the subject
-            “ListingReady early access”. Do not attach private product photos unless we
+            “MainPic early access”. Do not attach private product photos unless we
             explicitly ask for a sample and you agree to share it.
           </p>
         ) : (

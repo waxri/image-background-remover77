@@ -82,7 +82,7 @@ async function verifyTurnstile(
 
 async function createRateLimitKey(remoteIp: string, salt?: string) {
   const windowId = Math.floor(Date.now() / 60_000);
-  const input = new TextEncoder().encode(`${salt || "listingready-rate-limit"}:${remoteIp}`);
+  const input = new TextEncoder().encode(`${salt || "mainpic-rate-limit"}:${remoteIp}`);
   const digest = await crypto.subtle.digest("SHA-256", input);
   const fingerprint = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),

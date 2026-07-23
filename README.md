@@ -1,6 +1,6 @@
-# ListingReady
+# MainPic
 
-ListingReady is a Next.js and Tailwind CSS app that turns ordinary product photos into marketplace-ready images for small ecommerce sellers. It uses a Cloudflare Pages Function to call Remove.bg, then performs alpha-bound detection, centering, background composition, compliance checks, and JPG/PNG/WebP export in the browser.
+MainPic is a Next.js and Tailwind CSS app that turns ordinary product photos into marketplace-ready image deliverables for small ecommerce sellers. It uses a Cloudflare Pages Function to call Remove.bg, then performs alpha-bound detection, centering, background composition, compliance checks, multi-platform packaging, and JPG/PNG/WebP export in the browser.
 
 The homepage is intentionally focused on Amazon US main images. The existing background-removal SEO direction remains available at `/image-background-remover`.
 
@@ -15,6 +15,8 @@ The homepage is intentionally focused on Amazon US main images. The existing bac
 - Standard/high export quality with source-resolution diagnostics
 - Amazon-oriented compliance checklist
 - Browser-side JPG, PNG, and WebP export
+- SKU-aware automatic file naming
+- One-click Amazon, Shopify, and transparent-image ZIP delivery packs
 - Cloudflare Turnstile and optional KV rate limiting
 - No persistent image storage
 - Privacy, terms, and contact routes for public launch readiness

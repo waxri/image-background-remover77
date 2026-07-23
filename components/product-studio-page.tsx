@@ -26,6 +26,7 @@ type QuickRecipe = "amazon-clean" | "soft-shadow" | "transparent";
 type ProcessStatus = "demo" | "validating" | "processing" | "ready" | "error";
 type ComplianceStatus = "pass" | "warning" | "fail" | "manual";
 type TurnstileMode = "disabled" | "checking" | "required" | "bypassed";
+type ExportPresetId = "amazon" | "shopify" | "transparent";
 
 type ComplianceItem = {
   label: string;
@@ -83,6 +84,41 @@ const TURNSTILE_BYPASS_HOSTNAMES = new Set(
     .map((hostname) => hostname.trim().toLowerCase())
     .filter(Boolean),
 );
+const EXPORT_PRESETS = [
+  {
+    id: "amazon",
+    label: "Amazon main",
+    detail: "1600 × 1600 · white · JPG",
+    suffix: "main-amazon",
+    width: 1600,
+    height: 1600,
+    coverage: 0.9,
+    background: "white",
+    format: "image/jpeg",
+  },
+  {
+    id: "shopify",
+    label: "Shopify square",
+    detail: "2048 × 2048 · white · PNG",
+    suffix: "shopify",
+    width: 2048,
+    height: 2048,
+    coverage: 0.86,
+    background: "white",
+    format: "image/png",
+  },
+  {
+    id: "transparent",
+    label: "Transparent cutout",
+    detail: "2048 × 2048 · transparent · PNG",
+    suffix: "transparent",
+    width: 2048,
+    height: 2048,
+    coverage: 0.86,
+    background: "transparent",
+    format: "image/png",
+  },
+] as const;
 
 const platformLabels: Record<Platform, string> = {
   amazon: "Amazon",
@@ -132,7 +168,7 @@ function track(event: string, properties: Record<string, unknown> = {}) {
   if (typeof window === "undefined") return;
   const payload = { event, ...properties };
   window.dataLayer?.push(payload);
-  window.dispatchEvent(new CustomEvent("listingready:analytics", { detail: payload }));
+  window.dispatchEvent(new CustomEvent("mainpic:analytics", { detail: payload }));
 }
 
 function formatBytes(bytes: number) {
@@ -148,6 +184,15 @@ function baseFileName(name: string) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "product"
   );
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function CheckIcon({ small = false }: { small?: boolean }) {
@@ -257,7 +302,7 @@ function TurnstileGate({
       renderWidget();
     } else {
       const existing = document.querySelector<HTMLScriptElement>(
-        'script[data-listingready-turnstile="true"]',
+        'script[data-mainpic-turnstile="true"]',
       );
       if (existing) {
         existing.addEventListener("load", renderWidget, { once: true });
@@ -266,7 +311,7 @@ function TurnstileGate({
         script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
         script.async = true;
         script.defer = true;
-        script.dataset.listingreadyTurnstile = "true";
+        script.dataset.mainpicTurnstile = "true";
         script.addEventListener("load", renderWidget, { once: true });
         document.head.appendChild(script);
       }
@@ -320,6 +365,12 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   const [turnstileMode, setTurnstileMode] = useState<TurnstileMode>(
     TURNSTILE_SITE_KEY ? "checking" : "disabled",
   );
+  const [skuName, setSkuName] = useState("drill");
+  const [selectedPackExports, setSelectedPackExports] = useState<ExportPresetId[]>(
+    EXPORT_PRESETS.map((preset) => preset.id),
+  );
+  const [isExportingPack, setIsExportingPack] = useState(false);
+  const [packMessage, setPackMessage] = useState("");
   const [dialogPlan, setDialogPlan] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"original" | "result">("result");
   const [successfulImages, setSuccessfulImages] = useState(0);
@@ -336,24 +387,25 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   }, [customSize, platform]);
 
   const extension = getOutputExtension(format);
-  const downloadName = `${baseFileName(sourceName)}-main-${platform}.${extension}`;
+  const safeSkuName = baseFileName(skuName || sourceName);
+  const downloadName = `${safeSkuName}-main-${platform}.${extension}`;
   const hero =
     variant === "background"
       ? {
           title: "Product backgrounds, removed and ready.",
           subtitle:
-            "Create a transparent cutout or a marketplace-ready white background image in one short workflow.",
+            "Remove once, then deliver white, transparent, Amazon, and Shopify-ready files without opening a design canvas.",
         }
       : {
           title: "Amazon product photos, ready to list.",
           subtitle:
-            "Turn an ordinary product shot into a compliant white-background image—centered, sized, and checked.",
+            "Turn one ordinary product shot into a checked Amazon main image and a ready-named multi-channel delivery pack.",
         };
 
   useEffect(() => {
-    const savedColor = window.sessionStorage.getItem("listingready:background-color");
+    const savedColor = window.sessionStorage.getItem("mainpic:background-color");
     if (savedColor && /^#[0-9a-f]{6}$/i.test(savedColor)) setBackgroundColor(savedColor);
-    const savedUsage = Number(window.sessionStorage.getItem("listingready:successful-images"));
+    const savedUsage = Number(window.sessionStorage.getItem("mainpic:successful-images"));
     if (Number.isFinite(savedUsage) && savedUsage > 0) {
       setSuccessfulImages(Math.min(savedUsage, FREE_IMAGE_LIMIT));
     }
@@ -483,6 +535,8 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     setError("");
     setStatus("processing");
     setSourceName(file.name);
+    setSkuName(baseFileName(file.name));
+    setPackMessage("");
     setPreviewMode("result");
 
     if (originalObjectUrlRef.current) URL.revokeObjectURL(originalObjectUrlRef.current);
@@ -534,7 +588,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       setCutoutVersion((version) => version + 1);
       setSuccessfulImages((previous) => {
         const next = Math.min(previous + 1, FREE_IMAGE_LIMIT);
-        window.sessionStorage.setItem("listingready:successful-images", String(next));
+        window.sessionStorage.setItem("mainpic:successful-images", String(next));
         return next;
       });
       track("background_removal_succeeded", { platform });
@@ -596,7 +650,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
 
   function chooseBackgroundColor(nextColor: string) {
     setBackgroundColor(nextColor);
-    window.sessionStorage.setItem("listingready:background-color", nextColor);
+    window.sessionStorage.setItem("mainpic:background-color", nextColor);
     track("settings_changed", { setting: "background_color", platform });
   }
 
@@ -643,7 +697,84 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     track("quick_recipe_selected", { recipe, platform });
   }
 
+  function togglePackExport(presetId: ExportPresetId) {
+    setSelectedPackExports((selected) =>
+      selected.includes(presetId)
+        ? selected.filter((id) => id !== presetId)
+        : [...selected, presetId],
+    );
+    setPackMessage("");
+  }
+
+  async function downloadMarketplacePack() {
+    const image = bitmapRef.current;
+    const bounds = boundsRef.current;
+    const selectedPresets = EXPORT_PRESETS.filter((preset) =>
+      selectedPackExports.includes(preset.id),
+    );
+    if (!image || !bounds || selectedPresets.length === 0) return;
+
+    setIsExportingPack(true);
+    setPackMessage(`Building ${selectedPresets.length} export${selectedPresets.length === 1 ? "" : "s"}…`);
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+
+      for (const preset of selectedPresets) {
+        const blob = await composeProductImage(image, bounds, {
+          width: preset.width,
+          height: preset.height,
+          coverage: preset.coverage,
+          background: preset.background,
+          backgroundColor,
+          format: preset.format,
+          edgeRefinement,
+          shadow: preset.id === "amazon" || preset.id === "transparent" ? "none" : shadow,
+          quality: outputQuality === "high" ? 0.96 : 0.88,
+        });
+        zip.file(
+          `${safeSkuName}-${preset.suffix}.${getOutputExtension(preset.format)}`,
+          blob,
+        );
+      }
+
+      zip.file(
+        `${safeSkuName}-readme.txt`,
+        [
+          "MainPic marketplace export pack",
+          "",
+          `SKU: ${safeSkuName}`,
+          ...selectedPresets.map((preset) => `${preset.label}: ${preset.detail}`),
+          "",
+          "Marketplace checks are based on public guidance and do not guarantee approval.",
+        ].join("\n"),
+      );
+      const zipBlob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+      });
+      downloadBlob(zipBlob, `${safeSkuName}-marketplace-pack.zip`);
+      setPackMessage(
+        `${selectedPresets.length} image${selectedPresets.length === 1 ? "" : "s"} packaged locally.`,
+      );
+      track("marketplace_pack_downloaded", {
+        exportCount: selectedPresets.length,
+        presets: selectedPresets.map((preset) => preset.id).join(","),
+      });
+    } catch (caught) {
+      setPackMessage(
+        caught instanceof Error
+          ? caught.message
+          : "The browser could not create the export pack.",
+      );
+    } finally {
+      setIsExportingPack(false);
+    }
+  }
+
   const isResultReady = status === "demo" || status === "ready";
+  const hasProcessedCutout = cutoutVersion > 0 && status === "ready";
   const isAmazon = platform === "amazon";
   const longestEdge = Math.max(outputSize.width, outputSize.height);
   const cutoutScale = cutoutInfo
@@ -732,15 +863,21 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     },
   ];
   const hasFailedCheck = complianceItems.some((item) => item.status === "fail");
+  const readinessScore = Math.max(
+    0,
+    100 -
+      complianceItems.filter((item) => item.status === "fail").length * 25 -
+      complianceItems.filter((item) => item.status === "warning").length * 8,
+  );
   const isPresetReady = isResultReady && !hasFailedCheck;
 
   return (
     <main>
       <header className="site-header">
         <div className="site-header-inner">
-          <a className="brand" href="/" aria-label="ListingReady home">
+          <a className="brand" href="/" aria-label="MainPic home">
             <span className="brand-mark" aria-hidden="true" />
-            ListingReady
+            MainPic
           </a>
           <nav className="main-nav" aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
@@ -1013,7 +1150,10 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
             </div>
 
             <div className="checklist">
-              <strong>Compliance checklist</strong>
+              <div className="checklist-heading">
+                <strong>{isAmazon ? "Amazon readiness" : "Export readiness"}</strong>
+                <span>{readinessScore}/100</span>
+              </div>
               {complianceItems.map((item) => (
                 <div className={`check-row ${item.status}`} key={item.label} title={item.detail}>
                   <StatusIcon status={item.status} />
@@ -1045,13 +1185,73 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 <DownloadIcon /> Download
               </button>
             )}
+
+            <div className="export-center">
+              <div className="export-center-heading">
+                <div>
+                  <span className="feature-kicker">Multi-channel delivery</span>
+                  <strong>Marketplace pack</strong>
+                </div>
+                <span className="local-badge">Local ZIP</span>
+              </div>
+
+              <label className="sku-field">
+                <span>SKU / filename</span>
+                <input
+                  type="text"
+                  value={skuName}
+                  maxLength={64}
+                  placeholder="sku-123"
+                  onChange={(event) => {
+                    setSkuName(event.target.value);
+                    setPackMessage("");
+                  }}
+                />
+              </label>
+
+              <div className="pack-options">
+                {EXPORT_PRESETS.map((preset) => (
+                  <label className="pack-option" key={preset.id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPackExports.includes(preset.id)}
+                      onChange={() => togglePackExport(preset.id)}
+                    />
+                    <span>
+                      <strong>{preset.label}</strong>
+                      <small>{preset.detail}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <button
+                className="button button-pack"
+                type="button"
+                disabled={
+                  !hasProcessedCutout ||
+                  selectedPackExports.length === 0 ||
+                  isExportingPack
+                }
+                onClick={() => void downloadMarketplacePack()}
+              >
+                <DownloadIcon />
+                {isExportingPack ? "Building ZIP…" : "Download marketplace pack"}
+              </button>
+              <p className="pack-note" aria-live="polite">
+                {packMessage ||
+                  (hasProcessedCutout
+                    ? "One cutout, every selected size. No extra API credits."
+                    : "Upload a photo to unlock one-click multi-size delivery.")}
+              </p>
+            </div>
           </aside>
         </div>
 
         <div className="trust-band">
           <div className="trust-lead">Built for sellers who need<br />compliant images, fast.</div>
           <TrustItem title="Amazon-focused">Practical checks for the main image requirements.</TrustItem>
-          <TrustItem title="Save time">Upload, adjust, check, and download in one place.</TrustItem>
+          <TrustItem title="Multi-channel pack">Amazon, Shopify, and transparent files from one cutout.</TrustItem>
           <TrustItem title="Secure and private">Images are processed for the request, not archived.</TrustItem>
         </div>
       </section>
@@ -1072,9 +1272,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           </WorkflowStep>
           <WorkflowStep number="3" title="Download and list">
             <div className="file-receipt">
-              <strong>drill-main-amazon.jpg</strong>
-              <span>JPG · 1.1 MB</span>
-              <span><CheckIcon small />Pure white · 1600 × 1600</span>
+              <strong>sku-104-marketplace-pack.zip</strong>
+              <span>Amazon · Shopify · transparent</span>
+              <span><CheckIcon small />Ready-named files · one click</span>
             </div>
           </WorkflowStep>
         </div>
@@ -1124,8 +1324,8 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
           <p className="credit-note">A credit is used only when an image is processed successfully. Failed jobs are automatically refunded.</p>
           <div className="included-row">
             <span><CheckIcon small />Amazon &amp; Shopify presets</span>
-            <span><CheckIcon small />JPG, PNG &amp; WebP downloads</span>
-            <span><CheckIcon small />No watermarks</span>
+            <span><CheckIcon small />SKU naming &amp; local ZIP packs</span>
+            <span><CheckIcon small />JPG, PNG &amp; WebP · no watermarks</span>
           </div>
         </div>
       </section>
@@ -1148,7 +1348,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       </section>
 
       <footer className="site-footer shell">
-        <div><a className="brand" href="/"><span className="brand-mark" aria-hidden="true" />ListingReady</a><p>Built for small ecommerce teams.</p></div>
+        <div><a className="brand" href="/"><span className="brand-mark" aria-hidden="true" />MainPic</a><p>Marketplace image delivery for small ecommerce teams.</p></div>
         <nav aria-label="Footer navigation">
           <a href="/">Amazon Product Photo Maker</a>
           <a href="/image-background-remover">Image Background Remover</a>

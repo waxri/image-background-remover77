@@ -12,7 +12,7 @@ export function LegalPage({ title, intro, children }: LegalPageProps) {
       <header className="border-b border-slate-200">
         <div className="mx-auto flex min-h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
           <Link className="text-xl font-extrabold tracking-[-0.04em]" href="/">
-            ListingReady
+            MainPic
           </Link>
           <Link
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold transition hover:border-blue-600 hover:text-blue-600"

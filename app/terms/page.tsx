@@ -5,8 +5,8 @@ import { canonicalUrl } from "@/lib/site-metadata";
 const canonical = canonicalUrl("/terms");
 
 export const metadata: Metadata = {
-  title: { absolute: "Terms | ListingReady" },
-  description: "Terms for using the ListingReady product photo tool.",
+  title: { absolute: "Terms | MainPic" },
+  description: "Terms for using the MainPic product photo tool.",
   ...(canonical ? { alternates: { canonical } } : {}),
 };
 
@@ -14,7 +14,7 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms"
-      intro="Use ListingReady as a production aid, and review every output before publishing it to a marketplace."
+      intro="Use MainPic as a production aid, and review every output before publishing it to a marketplace."
     >
       <section>
         <h2>Marketplace review</h2>
