@@ -1003,7 +1003,7 @@ summary:focus-visible {
 
 .download-button {
   width: 100%;
-  margin-top: 9px;
+  margin: 0;
 }
 
 .download-icon {
@@ -1015,36 +1015,42 @@ summary:focus-visible {
   stroke-width: 1.8;
 }
 
-.export-center {
+.download-dock {
   display: grid;
-  margin-top: 18px;
-  border: 1px solid #cbd9f4;
-  border-radius: 10px;
-  padding: 13px;
+  border-top: 1px solid #cbd9f4;
+  padding: 20px 22px 22px;
   background: linear-gradient(160deg, #f8fbff 0%, #eef4ff 100%);
-  gap: 11px;
+  grid-column: 1 / -1;
+  gap: 14px;
 }
 
-.export-center-heading {
+.download-dock-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.export-center-heading > div {
+.download-dock-heading > div {
   display: grid;
   gap: 2px;
 }
 
-.export-center-heading strong {
-  font-size: 13px;
+.download-dock-heading strong {
+  font-size: 16px;
   letter-spacing: -0.01em;
+}
+
+.download-dock-controls {
+  display: grid;
+  align-items: end;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1.58fr);
+  gap: 14px;
 }
 
 .feature-kicker {
   color: var(--blue);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 820;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1085,6 +1091,7 @@ summary:focus-visible {
 
 .pack-options {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -1120,25 +1127,36 @@ summary:focus-visible {
 }
 
 .pack-option strong {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .pack-option small {
   overflow: hidden;
   color: var(--muted-2);
-  font-size: 8px;
+  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.download-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.download-actions .button {
+  min-height: 48px;
+  font-size: 12px;
+}
+
 .button-pack {
   width: 100%;
-  min-height: 39px;
+  min-height: 48px;
   border-color: #0b2456;
   background: #0b2456;
   color: var(--white);
   box-shadow: 0 7px 16px rgb(11 36 86 / 0.15);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .button-pack:hover:not(:disabled) {
@@ -1154,7 +1172,7 @@ summary:focus-visible {
 .pack-note {
   margin: -3px 0 0;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
@@ -1727,19 +1745,10 @@ summary:focus-visible {
     margin-top: 0;
   }
 
-  .settings-pane .checklist,
-  .settings-pane .download-button {
+  .settings-pane .checklist {
     margin-top: 0;
   }
 
-  .settings-pane .export-center {
-    grid-column: 1 / -1;
-    margin-top: 0;
-  }
-
-  .settings-pane .download-button {
-    align-self: end;
-  }
 }
 
 @media (max-width: 900px) {
@@ -1784,10 +1793,6 @@ summary:focus-visible {
   .settings-pane {
     grid-column: auto;
     grid-template-columns: 1fr 1fr;
-  }
-
-  .settings-pane .download-button {
-    align-self: end;
   }
 
   .trust-band,
@@ -1879,6 +1884,16 @@ summary:focus-visible {
   .setup-pane,
   .settings-pane {
     padding: 18px 16px;
+  }
+
+  .download-dock {
+    padding: 18px 16px 20px;
+  }
+
+  .download-dock-controls,
+  .download-actions,
+  .download-dock .pack-options {
+    grid-template-columns: 1fr;
   }
 
   .preview-pane {

@@ -1162,39 +1162,18 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
               ))}
             </div>
 
-            {resultUrl && isResultReady ? (
-              <a
-                className="button button-primary download-button"
-                href={resultUrl}
-                download={downloadName}
-                onClick={() =>
-                  track("image_downloaded", {
-                    platform,
-                    format,
-                    coverage,
-                    edgeRefinement,
-                    shadow,
-                    outputQuality,
-                  })
-                }
-              >
-                <DownloadIcon /> Download {extension.toUpperCase()}
-              </a>
-            ) : (
-              <button className="button button-primary download-button" type="button" disabled>
-                <DownloadIcon /> Download
-              </button>
-            )}
+          </aside>
 
-            <div className="export-center">
-              <div className="export-center-heading">
-                <div>
-                  <span className="feature-kicker">Multi-channel delivery</span>
-                  <strong>Marketplace pack</strong>
-                </div>
-                <span className="local-badge">Local ZIP</span>
+          <section className="download-dock" aria-label="Download images">
+            <div className="download-dock-heading">
+              <div>
+                <span className="feature-kicker">Ready to export</span>
+                <strong>Download your listing images</strong>
               </div>
+              <span className="local-badge">Processed locally</span>
+            </div>
 
+            <div className="download-dock-controls">
               <label className="sku-field">
                 <span>SKU / filename</span>
                 <input
@@ -1209,7 +1188,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 />
               </label>
 
-              <div className="pack-options">
+              <div className="pack-options" aria-label="Marketplace pack contents">
                 {EXPORT_PRESETS.map((preset) => (
                   <label className="pack-option" key={preset.id}>
                     <input
@@ -1224,6 +1203,32 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                   </label>
                 ))}
               </div>
+            </div>
+
+            <div className="download-actions">
+              {resultUrl && isResultReady ? (
+                <a
+                  className="button button-primary download-button"
+                  href={resultUrl}
+                  download={downloadName}
+                  onClick={() =>
+                    track("image_downloaded", {
+                      platform,
+                      format,
+                      coverage,
+                      edgeRefinement,
+                      shadow,
+                      outputQuality,
+                    })
+                  }
+                >
+                  <DownloadIcon /> Download current {extension.toUpperCase()}
+                </a>
+              ) : (
+                <button className="button button-primary download-button" type="button" disabled>
+                  <DownloadIcon /> Download current image
+                </button>
+              )}
 
               <button
                 className="button button-pack"
@@ -1236,16 +1241,17 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 onClick={() => void downloadMarketplacePack()}
               >
                 <DownloadIcon />
-                {isExportingPack ? "Building ZIP…" : "Download marketplace pack"}
+                {isExportingPack ? "Building ZIP…" : "Download marketplace ZIP"}
               </button>
-              <p className="pack-note" aria-live="polite">
-                {packMessage ||
-                  (hasProcessedCutout
-                    ? "One cutout, every selected size. No extra API credits."
-                    : "Upload a photo to unlock one-click multi-size delivery.")}
-              </p>
             </div>
-          </aside>
+
+            <p className="pack-note" aria-live="polite">
+              {packMessage ||
+                (hasProcessedCutout
+                  ? "One cutout, every selected size. No extra API credits."
+                  : "Upload a photo to unlock both download options.")}
+            </p>
+          </section>
         </div>
 
         <div className="trust-band">
