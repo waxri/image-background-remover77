@@ -37,6 +37,9 @@ npx wrangler pages dev out
 
 ## Cloudflare Pages
 
+- Project: `image-background-remover77`
+- Production URL: `https://image-background-remover77.pages.dev`
+- Git source: `waxri/image-background-remover77`, production branch `main`
 - Build command: `npm run build`
 - Output directory: `out`
 - Secrets: `REMOVE_BG_API_KEY`, `TURNSTILE_SECRET_KEY`
