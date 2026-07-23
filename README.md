@@ -28,12 +28,16 @@ npm run dev
 
 The static frontend works in demo mode without credentials. Live background removal requires the Cloudflare Function and `REMOVE_BG_API_KEY`.
 
-To exercise Pages Functions locally after building:
+To exercise Pages Functions and Turnstile locally, add `REMOVE_BG_API_KEY` to
+`.dev.vars`, then use:
 
 ```bash
-npm run build
-npx wrangler pages dev out
+npm run dev:pages
 ```
+
+`dev:pages` uses Cloudflare's always-pass Turnstile test credentials on
+`localhost`. Production continues to use the real site key and secret configured
+in Cloudflare Pages.
 
 ## Cloudflare Pages
 
