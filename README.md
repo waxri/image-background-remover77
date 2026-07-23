@@ -50,6 +50,10 @@ in Cloudflare Pages.
 - Recommended secret when KV limiting is enabled: `RATE_LIMIT_SALT`
 - Build variables: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `NEXT_PUBLIC_SITE_URL`
 - Optional build variable: `NEXT_PUBLIC_SUPPORT_EMAIL`
+- Temporary exact-host fallback: set both `NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES`
+  and `TURNSTILE_BYPASS_HOSTNAMES` to the same comma-separated hostname list.
+  Remove these values after every production hostname is authorized on the
+  Turnstile widget.
 - Optional runtime variables: `MAX_UPLOAD_BYTES`, `RATE_LIMIT_PER_MINUTE`
 - Optional KV binding: `RATE_LIMIT`
 

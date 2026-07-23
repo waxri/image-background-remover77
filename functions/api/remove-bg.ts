@@ -1,6 +1,7 @@
 type Env = {
   REMOVE_BG_API_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  TURNSTILE_BYPASS_HOSTNAMES?: string;
   RATE_LIMIT_SALT?: string;
   MAX_UPLOAD_BYTES?: string;
   RATE_LIMIT_PER_MINUTE?: string;
@@ -26,6 +27,15 @@ const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const DEFAULT_REQUESTS_PER_MINUTE = 6;
 const UPSTREAM_TIMEOUT_MS = 25_000;
+
+function isTurnstileBypassed(hostname: string, configuredHostnames?: string) {
+  if (!configuredHostnames) return false;
+  return configuredHostnames
+    .split(",")
+    .map((configuredHostname) => configuredHostname.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(hostname.toLowerCase());
+}
 
 function parseLimit(value: string | undefined, fallback: number, maximum: number) {
   const parsed = Number(value);
@@ -163,7 +173,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const hostname = new URL(request.url).hostname;
   const isLocalRequest = hostname === "localhost" || hostname === "127.0.0.1";
-  if (!env.TURNSTILE_SECRET_KEY && !isLocalRequest) {
+  const bypassTurnstile = isTurnstileBypassed(
+    hostname,
+    env.TURNSTILE_BYPASS_HOSTNAMES,
+  );
+  if (!env.TURNSTILE_SECRET_KEY && !isLocalRequest && !bypassTurnstile) {
     return jsonError(
       "service_unavailable",
       "Security verification is not configured yet.",
@@ -171,7 +185,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
-  if (env.TURNSTILE_SECRET_KEY) {
+  if (env.TURNSTILE_SECRET_KEY && !bypassTurnstile) {
     const token = formData.get("turnstileToken");
     if (typeof token !== "string" || !token) {
       return jsonError(

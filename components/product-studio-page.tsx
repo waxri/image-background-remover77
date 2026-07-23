@@ -25,6 +25,7 @@ type OutputQuality = "standard" | "high";
 type QuickRecipe = "amazon-clean" | "soft-shadow" | "transparent";
 type ProcessStatus = "demo" | "validating" | "processing" | "ready" | "error";
 type ComplianceStatus = "pass" | "warning" | "fail" | "manual";
+type TurnstileMode = "disabled" | "checking" | "required" | "bypassed";
 
 type ComplianceItem = {
   label: string;
@@ -76,6 +77,12 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const FREE_IMAGE_LIMIT = 3;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+const TURNSTILE_BYPASS_HOSTNAMES = new Set(
+  (process.env.NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES || "")
+    .split(",")
+    .map((hostname) => hostname.trim().toLowerCase())
+    .filter(Boolean),
+);
 
 const platformLabels: Record<Platform, string> = {
   amazon: "Amazon",
@@ -310,6 +317,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
   const [cutoutVersion, setCutoutVersion] = useState(0);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileMode, setTurnstileMode] = useState<TurnstileMode>(
+    TURNSTILE_SITE_KEY ? "checking" : "disabled",
+  );
   const [dialogPlan, setDialogPlan] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"original" | "result">("result");
   const [successfulImages, setSuccessfulImages] = useState(0);
@@ -347,6 +357,15 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
     if (Number.isFinite(savedUsage) && savedUsage > 0) {
       setSuccessfulImages(Math.min(savedUsage, FREE_IMAGE_LIMIT));
     }
+  }, []);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    setTurnstileMode(
+      TURNSTILE_BYPASS_HOSTNAMES.has(window.location.hostname.toLowerCase())
+        ? "bypassed"
+        : "required",
+    );
   }, []);
 
   useEffect(() => {
@@ -441,7 +460,10 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       track("image_upload_rejected", { reason: "free_limit" });
       return;
     }
-    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+    if (
+      turnstileMode === "checking" ||
+      (turnstileMode === "required" && !turnstileToken)
+    ) {
       setError("Security check is still loading. Please try again in a moment.");
       setStatus("error");
       track("image_upload_rejected", { reason: "verification_not_ready" });
@@ -517,7 +539,7 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
       });
       track("background_removal_succeeded", { platform });
     } catch (caught) {
-      if (TURNSTILE_SITE_KEY) {
+      if (turnstileMode === "required") {
         setTurnstileToken("");
         setTurnstileResetKey((key) => key + 1);
       }
@@ -796,7 +818,9 @@ export function ProductStudioPage({ variant }: ProductStudioPageProps) {
                 ? `${FREE_IMAGE_LIMIT} free full-resolution test images in this session.`
                 : `${successfulImages} of ${FREE_IMAGE_LIMIT} free test ${successfulImages === 1 ? "image" : "images"} used.`}
             </p>
-            <TurnstileGate onToken={setTurnstileToken} resetKey={turnstileResetKey} />
+            {turnstileMode === "required" ? (
+              <TurnstileGate onToken={setTurnstileToken} resetKey={turnstileResetKey} />
+            ) : null}
           </section>
 
           <section className="preview-pane" aria-label="Original and result preview">

@@ -5,9 +5,13 @@ pages_build_output_dir = "out"
 [vars]
 NEXT_PUBLIC_SITE_URL = "https://image-background-remover77.pages.dev"
 NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAD7_o7cVksEcWNMT"
+NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES = "image-background-remover77.pages.dev"
+TURNSTILE_BYPASS_HOSTNAMES = "image-background-remover77.pages.dev"
 
 # Keep REMOVE_BG_API_KEY, TURNSTILE_SECRET_KEY, and RATE_LIMIT_SALT in
 # Cloudflare Pages secrets. NEXT_PUBLIC_TURNSTILE_SITE_KEY is a build variable.
+# TURNSTILE_BYPASS_HOSTNAMES is a temporary exact-host fallback until the
+# production pages.dev hostname is authorized on the Turnstile widget.
 # MAX_UPLOAD_BYTES and RATE_LIMIT_PER_MINUTE can be configured as runtime variables.
 
 # Optional KV binding for best-effort per-IP request limiting:
