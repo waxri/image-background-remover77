@@ -54,8 +54,12 @@ in Cloudflare Pages.
 - Optional build variable: `NEXT_PUBLIC_SUPPORT_EMAIL`
 - Temporary exact-host fallback: set both `NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES`
   and `TURNSTILE_BYPASS_HOSTNAMES` to the same comma-separated hostname list.
+  The current Pages production hostname is also compiled into the frontend as
+  a fail-safe because Cloudflare build variables are not injected into a local
+  `next build` before a direct Pages upload.
   Remove these values after every production hostname is authorized on the
-  Turnstile widget.
+  Turnstile widget, then remove `TEMPORARY_PAGES_BYPASS_HOSTNAME` from the
+  product studio.
 - Optional runtime variables: `MAX_UPLOAD_BYTES`, `RATE_LIMIT_PER_MINUTE`
 - Optional KV binding: `RATE_LIMIT`
 

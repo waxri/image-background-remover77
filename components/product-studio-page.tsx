@@ -78,8 +78,16 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const FREE_IMAGE_LIMIT = 3;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+// Keep the Pages production hostname aligned with TURNSTILE_BYPASS_HOSTNAMES
+// in wrangler.toml until the Turnstile widget grants this hostname access.
+const TEMPORARY_PAGES_BYPASS_HOSTNAME =
+  "image-background-remover77.pages.dev";
 const TURNSTILE_BYPASS_HOSTNAMES = new Set(
-  (process.env.NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES || "")
+  [
+    TEMPORARY_PAGES_BYPASS_HOSTNAME,
+    process.env.NEXT_PUBLIC_TURNSTILE_BYPASS_HOSTNAMES || "",
+  ]
+    .join(",")
     .split(",")
     .map((hostname) => hostname.trim().toLowerCase())
     .filter(Boolean),
